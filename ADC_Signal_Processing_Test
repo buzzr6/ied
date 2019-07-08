@@ -1,3 +1,6 @@
+#!/usr/bin/python2.7
+# -*- coding: utf-8 -*-
+
 from scipy.signal import firwin
 from scipy.signal import freqz
 from scipy.signal import lfilter
@@ -12,7 +15,7 @@ import RPi.GPIO as GPIO
 # check dtparam=spi=on --> in /boot/config.txt or (set via 'sudo raspi-config')
 
 # Set threshold for IED detection marker in ADC samples
-detection_threshold = 0.075  # type: float # volts
+detection_threshold = 0.01# type: float # volts
 
 # Instatiate Rasp Pi GPIO Pins for test purposes
 GPIO.setmode(GPIO.BCM)
@@ -21,19 +24,19 @@ GPIO.setup(18, GPIO.OUT)
 
 # define the sampling rate for the analog to digital converter
 sampling_rate = 100000.0  # 100kHz
-num_samples = 100000
+num_samples = 100
 kHz = 1000.0 # kHz
 # time for creating sin wave
-time = arange(0,1, 1.0/num_samples)
+time = arange(0,1,1.0/num_samples)
 
 # Create frequencies to use for Signal Processing
 f1 = 15000 # 15kHz
 f2 = 30000 # 30kHz
 
-# Create a Bandpass filter
-numtaps = 2048
-low_cutoff = 43500  # 43.5kHz
-high_cutoff = 46500  # 46.5kHz
+# Create a Bandpass filter to filter the multiplied_signal with
+numtaps = 64
+low_cutoff = 44000  # 43.5kHz
+high_cutoff = 46000  # 46.5kHz
 nyq_rate = sampling_rate / 2
 bpf = firwin(numtaps, [low_cutoff / nyq_rate, high_cutoff / nyq_rate], pass_zero=False)
 w, h = freqz(bpf)
@@ -108,13 +111,16 @@ class MCP3201(object):
         Calculates analogue voltage from the digital output code (ranging from 0-4095)
         VREF could be adjusted here (standard uses the 3V3 rail from the Rpi)
         """
-        return adc_output * (VREF / (2 ** 12 - 1))
+        return float32(adc_output * (VREF / (2 ** 12 - 1)))
+
+
 
     def multiplier(signal):
-        #multiply the input signal from the ADC by a 15khz sin wave to get f1 + f2 and f1 - f2
-        sinwave = multiplier = [np.sin(2 * np.pi * f1 * x/sampling_rate) for x in range(num_samples)]
-        signal_multiplied = signal * sinwave
-        return signal_multiplied
+        # Multiply the input signal from the ADC by a sin wave to get f1 + f2 and f1 - f2 and separate frequency components
+        # sinwave = [np.sin(2 * np.pi * f2 * x/sampling_rate) for x in range(num_samples)] # 30kHz sin wave
+        sinwave = [np.sin(2 * np.pi * f1 * x/sampling_rate) for x in range(num_samples)] # 15kHz sin wave
+        multiplied_signal = signal * sinwave
+        return multiplied_signal
 
 
 if __name__ == '__main__':
@@ -124,69 +130,66 @@ if __name__ == '__main__':
     i = 0
     time_length = 1
     numpoints = 100000.0
-    array_size = time_length * numpoints
-    array = np.zeros(array_size,1)
-    time = arange(0, time_length, numpoints)
+    array_size = num_samples
+    array = np.zeros((array_size,1), dtype=float32)
+    #array = [None]*array_size
 
     try:
-        while i != array_size:
+        for i in range(array_size):
+            # Take in the ADC Output value as a bit
             ADC_output_code = MCP3201.readADC_MSB()
+            # Convert the bits from the ADC to a float32 voltage
             ADC_voltage = MCP3201.convert_to_voltage(ADC_output_code)
+
             # print("MCP3201 output code (MSB-mode): %d" % ADC_output_code)
             # print("MCP3201 voltage: %0.2f V" % ADC_voltage)
 
+            # Set the value in the array(i) to the ADC_voltage received
+            # array[i] = np.float32(ADC_voltage)
             array[i] = ADC_voltage
-            # sleep(0.1)  # wait minimum of 100 ms between ADC measurements
-            i = i + 1
             # print(array)
 
-        # Read in the Least Significant Bit (not necessary for the precision needed for this)
-        # ADC_output_code = MCP3201.readADC_LSB()
-        # ADC_voltage = MCP3201.convert_to_voltage(ADC_output_code)
-        # print("MCP3201 output code (LSB-mode): %d" % ADC_output_code)
-        # print("MCP3201 voltage: %0.2f V" % ADC_voltage)
-        # print()
-        # sleep(0.1)
-
-        # Multiply the noisy input signal by a 15kHz sin wave to separate frequency components (f1-f2/f1+f2
+        # Multiply the noisy input signal by a 15kHz sin wave to separate frequency components (f1-f2/f1+f2)
         multiplied_signal = multiplier(array)
 
         # # Perform an fft of the mutliplied signal (for plotting purposes otherwise commented out)
-        # multiplied_Signal_fft = np.fft.fft(multiplied_Signal)
+        fft_multiplied_signal = np.fft.fft(multiplied_signal)
         # # Take absolute value of fft data or else the data is useless (complex)
-        # fft_multiplied_Signal = np.abs(multiplied_Signal_fft)
+        fft_multiplied_signal = np.abs(fft_multiplied_signal)
 
         # Filter the signal using the bandpass filter
-        signal_filtered = lfilter(bpf, 1, multiplied_Signal)
+        filtered_signal = lfilter(bpf, 1, multiplied_signal)
 
         # # Perform an fft of the filtered signal (for plotting purposes otherwise commented out)
-        # fft_signal = np.fft.fft(signal_filtered)
-        # Take absolute value of fft data or else the data is useless (complex)
-        # fft_signal_filtered = np.abs(fft_signal)
+        fft_filtered_signal = np.fft.fft(filtered_signal)
+        # # Take absolute value of fft data or else the data is useless (complex)
+        fft_filtered_signal = np.abs(fft_filtered_signal)
         # # Plot the fft of the array data
-        # plt.plot(20 * log10(abs(fft_signal_filtered)))
+        # plt.plot(20 * log10(fft_signal_filtered))
         # plt.title('Filtered Input Signal FFT')
         # plt.ylabel('Magnitude (dB)')
-        # plt.xlabel('Frequency (Hz)')
+        # plt.xlabel('Frequency (kHz)')
         # plt.xlim(0,500)
         # plt.show()
 
-        data_extracted = fft_signal_filtered[43500:46500]
+        # Read in the filtered signal and take the average and max of it for flagging a detection
+        data_extracted = filtered_signal
         threshold_avg = sum(data_extracted) / len(data_extracted)
-        threshold_max = max(data_extracted)
+        data_extracted.max()
+        threshold_max = data_extracted.max()
 
-        print threshold_avg
+        #print threshold_avg
         print threshold_max
 
         # Use threshold_max as a threshold for detection against set value above (detection_threshold) Should be ~ half power of 150mA but will need to tweak through testing
         if threshold_max >= detection_threshold:
             # Light up an LED on the raspberry pi if a detection is found (for testing purposes only
             # Replace this portion of code with Mavlink message transmission to pixhawk to send GCS GPS coordinates of detection
-            print "LED on"
+            print "Detection: LED On"
             GPIO.output(18, GPIO.HIGH)
-            time.sleep(0.5)
+            #time.sleep(0.5)
         else:
-            print "LED off"
+            print "No Detection: LED Off"
             GPIO.output(18, GPIO.LOW)
 
     except (KeyboardInterrupt):
@@ -197,27 +200,25 @@ if __name__ == '__main__':
         raise
 
     finally:
-        # plt.subplot(221)
-        # plt.plot(time, multiplied_Signal)
-        # plt.title('Noisy Input Signal')
-        # plt.ylabel('Magnitude (W)')
-        # plt.xlabel('Time (s)')
-        # plt.subplot(222)
-        # plt.plot(20 * log10(abs(multiplied_Signal_fft)))
-        # plt.title('Noisy Input Signal FFT')
-        # plt.ylabel('Magnitude (dB)')
-        # plt.xlabel('Frequency (Hz)')
-        # plt.subplot(223)
-        # plt.plot(time, signal_filtered)
-        # plt.title('Filtered Input Signal')
-        # plt.ylabel('Magnitude (W)')
-        # plt.xlabel('Time (s)')
-        # plt.xlim(0,1)
-        # plt.subplot(224)
-        # plt.plot(20 * log10(abs(fft_signal_filtered)))
-        # plt.title('Filtered Input Signal FFT')
-        # plt.ylabel('Magnitude (dB)')
-        # plt.xlabel('Frequency (Hz)')
-        # plt.xlim(0,500)
-        # plt.show()
+        #plt.subplot(221)
+        #plt.plot(time, multiplied_signal)
+        #plt.title('Multiplied Input Signal')
+        #plt.ylabel('Magnitude (W)')
+        #plt.xlabel('Time (s)')
+        #plt.subplot(222)
+        #plt.plot(20 * log10(fft_multiplied_Signal))
+        #plt.title('Multiplied Signal FFT')
+        #plt.ylabel('Magnitude (dB)')
+        #plt.xlabel('Frequency (kHz)')
+        #plt.subplot(223)
+        #plt.plot(time, filtered_signal)
+        #plt.title('Filtered Input Signal')
+        #plt.ylabel('Magnitude (W)')
+        #plt.xlabel('Time (s)')
+        #plt.subplot(224)
+        #plt.plot(20 * log10(fft_filtered_signal))
+        #plt.title('Filtered Input Signal FFT')
+        #plt.ylabel('Magnitude (dB)')
+        #plt.xlabel('Frequency (kHz)')
+        #plt.show()
         print()
