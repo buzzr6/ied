@@ -37,8 +37,8 @@ f2 = 30000 # 30kHz
 
 # Create a Bandpass filter to filter the multiplied_signal with
 numtaps = 64
-low_cutoff = 25000  # 43.5kHz
-high_cutoff = 35000  # 46.5kHz
+low_cutoff = 40000  # 43.5kHz
+high_cutoff = 45000  # 46.5kHz
 nyq_rate = sampling_rate / 2
 bpf = firwin(numtaps, [low_cutoff / nyq_rate, high_cutoff / nyq_rate], pass_zero=False)
 w, h = freqz(bpf)
