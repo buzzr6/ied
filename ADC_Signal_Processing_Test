@@ -4,6 +4,8 @@
 from scipy.signal import firwin
 from scipy.signal import freqz
 from scipy.signal import lfilter
+from scipy.signal import butter
+from scipy.signal import sosfilt
 from pylab import *
 import pylab as plt
 import numpy as np
@@ -15,7 +17,7 @@ import RPi.GPIO as GPIO
 # check dtparam=spi=on --> in /boot/config.txt or (set via 'sudo raspi-config')
 
 # Set threshold for IED detection marker in ADC samples
-detection_threshold = 0.01# type: float # volts
+detection_threshold = 0.1# type: float # volts
 
 # Instatiate Rasp Pi GPIO Pins for test purposes
 GPIO.setmode(GPIO.BCM)
@@ -35,18 +37,22 @@ f2 = 30000 # 30kHz
 
 # Create a Bandpass filter to filter the multiplied_signal with
 numtaps = 64
-low_cutoff = 44000  # 43.5kHz
-high_cutoff = 46000  # 46.5kHz
+low_cutoff = 25000  # 43.5kHz
+high_cutoff = 35000  # 46.5kHz
 nyq_rate = sampling_rate / 2
 bpf = firwin(numtaps, [low_cutoff / nyq_rate, high_cutoff / nyq_rate], pass_zero=False)
 w, h = freqz(bpf)
 
+# Create a Highpass Butterworth filter
+butter_low_cutoff = 1000 # 1000Hz
+hpf = butter(numtaps,butter_low_cutoff/nyq_rate,btype='highpass',analog=False, output='sos')
+
 # Plot bandpass filter response
-# plt.subplot(221)
-# plot(w / (2 * pi), 20 * log10(abs(h)))
-# plt.title('FIR Bandpass Filter Response')
-# plt.ylabel('Magnitude (dB)')
-# plt.xlabel('Frequency Coefficient')
+#plt.subplot(221)
+#plot(w / (2 * pi), 20 * log10(abs(h)))
+#plt.title('FIR Bandpass Filter Response')
+#plt.ylabel('Magnitude (dB)')
+#plt.xlabel('Frequency Coefficient')
 
 class MCP3201(object):
     """
@@ -64,7 +70,7 @@ class MCP3201(object):
             raise ValueError('wrong CE-setting: {0} setting (use 0 for CE0 or 1 for CE1)!'.format(CE_PIN))
         self._spi = spidev.SpiDev()
         self._spi.open(SPI_BUS, CE_PIN)
-        self._spi.max_speed_hz = 100000
+        self._spi.max_speed_hz = 2000000 # 2MHz
         pass
 
     def readADC_MSB(self):
@@ -115,12 +121,12 @@ class MCP3201(object):
 
 
 
-    def multiplier(signal):
-        # Multiply the input signal from the ADC by a sin wave to get f1 + f2 and f1 - f2 and separate frequency components
-        # sinwave = [np.sin(2 * np.pi * f2 * x/sampling_rate) for x in range(num_samples)] # 30kHz sin wave
-        sinwave = [np.sin(2 * np.pi * f1 * x/sampling_rate) for x in range(num_samples)] # 15kHz sin wave
-        multiplied_signal = signal * sinwave
-        return multiplied_signal
+def multiplier(signal):
+    # Multiply the input signal from the ADC by a sin wave to get f1 + f2 and f1 - f2 and separate frequency components
+    sinwave = [np.sin(2 * np.pi * f2 * x/sampling_rate) for x in range(num_samples)] # 30kHz sin wave
+    # sinwave = [np.sin(2 * np.pi * f1 * x/sampling_rate) for x in range(num_samples)] # 15kHz sin wave
+    multiplied_signal = signal * sinwave
+    return multiplied_signal
 
 
 if __name__ == '__main__':
@@ -151,19 +157,25 @@ if __name__ == '__main__':
 
         # Multiply the noisy input signal by a 15kHz sin wave to separate frequency components (f1-f2/f1+f2)
         multiplied_signal = multiplier(array)
+        # Do Not Multpiply the array - Skip and set equal to sampled array for testing
+        #multiplied_signal = array
 
         # # Perform an fft of the mutliplied signal (for plotting purposes otherwise commented out)
-        fft_multiplied_signal = np.fft.fft(multiplied_signal)
+        # fft_multiplied_signal = np.fft.fft(multiplied_signal)
         # # Take absolute value of fft data or else the data is useless (complex)
-        fft_multiplied_signal = np.abs(fft_multiplied_signal)
+        # fft_multiplied_signal = np.abs(fft_multiplied_signal)
 
         # Filter the signal using the bandpass filter
-        filtered_signal = lfilter(bpf, 1, multiplied_signal)
+        #filtered_signal = lfilter(bpf, 1, multiplied_signal)
+        # Filter the signal using the highpass butterworth filter
+        #filtered_signal = sosfilt(hpf, multiplied_signal)
+        # Do Not filter the signal array - Skip and set equal to sampled array for testing
+        filtered_signal = multiplied_signal
 
         # # Perform an fft of the filtered signal (for plotting purposes otherwise commented out)
-        fft_filtered_signal = np.fft.fft(filtered_signal)
+        #fft_filtered_signal = np.fft.fft(filtered_signal)
         # # Take absolute value of fft data or else the data is useless (complex)
-        fft_filtered_signal = np.abs(fft_filtered_signal)
+        #fft_filtered_signal = np.abs(fft_filtered_signal)
         # # Plot the fft of the array data
         # plt.plot(20 * log10(fft_signal_filtered))
         # plt.title('Filtered Input Signal FFT')
@@ -206,7 +218,7 @@ if __name__ == '__main__':
         #plt.ylabel('Magnitude (W)')
         #plt.xlabel('Time (s)')
         #plt.subplot(222)
-        #plt.plot(20 * log10(fft_multiplied_Signal))
+        #plt.plot(20 * log10(fft_multiplied_signal))
         #plt.title('Multiplied Signal FFT')
         #plt.ylabel('Magnitude (dB)')
         #plt.xlabel('Frequency (kHz)')
