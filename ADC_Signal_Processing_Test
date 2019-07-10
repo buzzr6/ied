@@ -1,6 +1,5 @@
 #!/usr/bin/python2.7
 # -*- coding: utf-8 -*-
-
 from scipy.signal import firwin
 from scipy.signal import freqz
 from scipy.signal import lfilter
@@ -12,42 +11,39 @@ import numpy as np
 import spidev
 from time import sleep
 import RPi.GPIO as GPIO
+import sys
 
-# uses the "spidev" package ('sudo pip3 install spidev')
-# check dtparam=spi=on --> in /boot/config.txt or (set via 'sudo raspi-config')
+# """Uses the "spidev" package ('sudo pip3 install spidev')"""
+# """check dtparam=spi=on --> in /boot/config.txt or (set via 'sudo raspi-config')"""
 
-# Set threshold for IED detection marker in ADC samples
-detection_threshold = 0.1# type: float # volts
+# """Set threshold for IED detection marker in ADC samples"""
+detection_threshold = 0.12 # type: float # voltage level (V)
 
-# Instatiate Rasp Pi GPIO Pins for test purposes
+# """Instatiate Rasp Pi GPIO Pins for test purposes"""
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 GPIO.setup(18, GPIO.OUT)
 
-# define the sampling rate for the analog to digital converter
+# """Define the sampling rate for the analog to digital converter"""
 sampling_rate = 100000.0  # 100kHz
-num_samples = 100
+num_samples = 1000
 kHz = 1000.0 # kHz
-# time for creating sin wave
-time = arange(0,1,1.0/num_samples)
+# """Linear time for creating sin wave"""
+time = arange(0,0.01,1.0/sampling_rate)
 
-# Create frequencies to use for Signal Processing
-f1 = 15000 # 15kHz
-f2 = 30000 # 30kHz
-
-# Create a Bandpass filter to filter the multiplied_signal with
+# """Create a Bandpass filter to filter multiplied_signal"""
 numtaps = 64
-low_cutoff = 40000  # 43.5kHz
-high_cutoff = 45000  # 46.5kHz
+low_cutoff = 26000  # 26kHz
+high_cutoff = 35000  # 35kHz
 nyq_rate = sampling_rate / 2
 bpf = firwin(numtaps, [low_cutoff / nyq_rate, high_cutoff / nyq_rate], pass_zero=False)
 w, h = freqz(bpf)
 
-# Create a Highpass Butterworth filter
-butter_low_cutoff = 1000 # 1000Hz
-hpf = butter(numtaps,butter_low_cutoff/nyq_rate,btype='highpass',analog=False, output='sos')
+# """Create a HPF Butterworth"""
+butter_low_cutoff = 500 # 500Hz
+hpf = butter(numtaps, butter_low_cutoff/nyq_rate, btype='highpass', analog=False, output='sos')
 
-# Plot bandpass filter response
+# """Plot bandpass filter response"""
 #plt.subplot(221)
 #plot(w / (2 * pi), 20 * log10(abs(h)))
 #plt.title('FIR Bandpass Filter Response')
@@ -70,7 +66,7 @@ class MCP3201(object):
             raise ValueError('wrong CE-setting: {0} setting (use 0 for CE0 or 1 for CE1)!'.format(CE_PIN))
         self._spi = spidev.SpiDev()
         self._spi.open(SPI_BUS, CE_PIN)
-        self._spi.max_speed_hz = 2000000 # 2MHz
+        self._spi.max_speed_hz = 3900000
         pass
 
     def readADC_MSB(self):
@@ -119,27 +115,21 @@ class MCP3201(object):
         """
         return float32(adc_output * (VREF / (2 ** 12 - 1)))
 
-
-
 def multiplier(signal):
-    # Multiply the input signal from the ADC by a sin wave to get f1 + f2 and f1 - f2 and separate frequency components
+    # """Create frequencies to use for signal processing by sinusoidal multiplication"""
+    f1 = 15000 # 15kHz
+    f2 = 30000 # 30kHz
+    # """Multiply the input signal from the ADC by a sin wave to get f1 + f2 and f1 - f2 to separate frequency components"""
     sinwave = [np.sin(2 * np.pi * f2 * x/sampling_rate) for x in range(num_samples)] # 30kHz sin wave
-    # sinwave = [np.sin(2 * np.pi * f1 * x/sampling_rate) for x in range(num_samples)] # 15kHz sin wave
-    multiplied_signal = signal * sinwave
+    #sinwave = [np.sin(2 * np.pi * f1 * x/sampling_rate) for x in range(num_samples)] # 15kHz sin wave
+    multiplied_signal = np.multiply(signal, sinwave)
     return multiplied_signal
 
+def kill_script()
+    sys.exit()
+    pass
 
-if __name__ == '__main__':
-    SPI_bus = 0
-    CE = 0
-    MCP3201 = MCP3201(SPI_bus, CE)
-    i = 0
-    time_length = 1
-    numpoints = 100000.0
-    array_size = num_samples
-    array = np.zeros((array_size,1), dtype=float32)
-    #array = [None]*array_size
-
+def IED_reading_function():
     try:
         for i in range(array_size):
             # Take in the ADC Output value as a bit
@@ -147,6 +137,7 @@ if __name__ == '__main__':
             # Convert the bits from the ADC to a float32 voltage
             ADC_voltage = MCP3201.convert_to_voltage(ADC_output_code)
 
+            # Print the ADC output code and MCP3201 sampled ADC Voltage
             # print("MCP3201 output code (MSB-mode): %d" % ADC_output_code)
             # print("MCP3201 voltage: %0.2f V" % ADC_voltage)
 
@@ -155,51 +146,43 @@ if __name__ == '__main__':
             array[i] = ADC_voltage
             # print(array)
 
-        # Multiply the noisy input signal by a 15kHz sin wave to separate frequency components (f1-f2/f1+f2)
-        multiplied_signal = multiplier(array)
-        # Do Not Multpiply the array - Skip and set equal to sampled array for testing
-        #multiplied_signal = array
+        # """Multiply the noisy input signal by a 15kHz sin wave to separate frequency components (f1-f2/f1+f2)"""
+        #multiplied_signal = multiplier(array)
+        # """Do Not Multiply the array - Skip and set equal to sampled array for testing"""
+        multiplied_signal = array
 
-        # # Perform an fft of the mutliplied signal (for plotting purposes otherwise commented out)
-        # fft_multiplied_signal = np.fft.fft(multiplied_signal)
-        # # Take absolute value of fft data or else the data is useless (complex)
-        # fft_multiplied_signal = np.abs(fft_multiplied_signal)
-
-        # Filter the signal using the bandpass filter
+        # """Perform an fft of the mutliplied signal (for plotting purposes otherwise commented out)"""
+        #fft_multiplied_signal = np.fft.rfft(multiplied_signal)
+        # """Take absolute value of fft data or else the data is useless (complex)"""
+        #fft_multiplied_signal = np.abs(fft_multiplied_signal)
+        
+        # """Filter the signal using the bandpass filter"""
         #filtered_signal = lfilter(bpf, 1, multiplied_signal)
-        # Filter the signal using the highpass butterworth filter
+        # """Filter the signal using the highpass butterworth filter"""
         #filtered_signal = sosfilt(hpf, multiplied_signal)
-        # Do Not filter the signal array - Skip and set equal to sampled array for testing
+        # """Do Not filter the signal array - Skip and set equal to sampled array for testing"""
         filtered_signal = multiplied_signal
 
-        # # Perform an fft of the filtered signal (for plotting purposes otherwise commented out)
-        #fft_filtered_signal = np.fft.fft(filtered_signal)
-        # # Take absolute value of fft data or else the data is useless (complex)
+        # """Perform an fft of the filtered signal (for plotting purposes otherwise commented out)"""
+        #fft_filtered_signal = np.fft.rfft(filtered_signal)
+        # """Take absolute value of fft data or else the data is useless (complex)"""
         #fft_filtered_signal = np.abs(fft_filtered_signal)
-        # # Plot the fft of the array data
-        # plt.plot(20 * log10(fft_signal_filtered))
-        # plt.title('Filtered Input Signal FFT')
-        # plt.ylabel('Magnitude (dB)')
-        # plt.xlabel('Frequency (kHz)')
-        # plt.xlim(0,500)
-        # plt.show()
 
-        # Read in the filtered signal and take the average and max of it for flagging a detection
-        data_extracted = filtered_signal
+        # """Read in the filtered signal and take the average and max of it for flagging a detection"""
+        data_extracted = fft_filtered_signal[260:340]
         threshold_avg = sum(data_extracted) / len(data_extracted)
-        data_extracted.max()
         threshold_max = data_extracted.max()
 
         #print threshold_avg
         print threshold_max
+        #print data_extracted
 
-        # Use threshold_max as a threshold for detection against set value above (detection_threshold) Should be ~ half power of 150mA but will need to tweak through testing
+        # """Use threshold_max as a threshold for detection against set value above detection_threshold"""
         if threshold_max >= detection_threshold:
-            # Light up an LED on the raspberry pi if a detection is found (for testing purposes only
-            # Replace this portion of code with Mavlink message transmission to pixhawk to send GCS GPS coordinates of detection
+            # """Light up an LED on the raspberry pi if a detection is found (for testing purposes only otherwise commented out)"""
+            # """Replace this portion of code with Mavlink message transmission to pixhawk to send GCS GPS coordinates of detection"""
             print "Detection: LED On"
             GPIO.output(18, GPIO.HIGH)
-            #time.sleep(0.5)
         else:
             print "No Detection: LED Off"
             GPIO.output(18, GPIO.LOW)
@@ -212,7 +195,9 @@ if __name__ == '__main__':
         raise
 
     finally:
+        #print(array)
         #plt.subplot(221)
+        #plt.plot(time, array)
         #plt.plot(time, multiplied_signal)
         #plt.title('Multiplied Input Signal')
         #plt.ylabel('Magnitude (W)')
@@ -227,10 +212,23 @@ if __name__ == '__main__':
         #plt.title('Filtered Input Signal')
         #plt.ylabel('Magnitude (W)')
         #plt.xlabel('Time (s)')
+        #plt.xlim(0,.0025)
         #plt.subplot(224)
+        #plt.plot(20*log10(data_extracted))
         #plt.plot(20 * log10(fft_filtered_signal))
         #plt.title('Filtered Input Signal FFT')
         #plt.ylabel('Magnitude (dB)')
         #plt.xlabel('Frequency (kHz)')
         #plt.show()
         print()
+        sleep(0.5)
+
+if __name__ == '__main__':
+    SPI_bus = 0
+    CE = 0
+    MCP3201 = MCP3201(SPI_bus, CE)
+    i = 0
+    array_size = num_samples
+    array = np.zeros((array_size,1), dtype=float32)
+    while True:
+        IED_reading_function()
