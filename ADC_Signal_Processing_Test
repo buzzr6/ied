@@ -164,9 +164,9 @@ def IED_reading_function():
         filtered_signal = multiplied_signal
 
         # """Perform an fft of the filtered signal (for plotting purposes otherwise commented out)"""
-        #fft_filtered_signal = np.fft.rfft(filtered_signal)
+        fft_filtered_signal = np.fft.rfft(filtered_signal)
         # """Take absolute value of fft data or else the data is useless (complex)"""
-        #fft_filtered_signal = np.abs(fft_filtered_signal)
+        fft_filtered_signal = np.abs(fft_filtered_signal)
 
         # """Read in the filtered signal and take the average and max of it for flagging a detection"""
         data_extracted = fft_filtered_signal[260:340]
