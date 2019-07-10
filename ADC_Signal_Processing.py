@@ -188,9 +188,9 @@ def IED_reading_function():
         #fft_multiplied_signal = np.abs(fft_multiplied_signal)
         
         # """Filter the signal using the bandpass filter"""
-        #filtered_signal = lfilter(bpf, 1, multiplied_signal)
+        filtered_signal = lfilter(bpf, 1, multiplied_signal)
         # """Filter the signal using the highpass butterworth filter"""
-        #filtered_signal = sosfilt(hpf, multiplied_signal)
+        filtered_signal = sosfilt(hpf, multiplied_signal)
         # """Do Not filter the signal array - Skip and set equal to sampled array for testing"""
         filtered_signal = multiplied_signal
 
